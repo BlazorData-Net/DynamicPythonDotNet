@@ -1,5 +1,166 @@
 ﻿@page "/"
+@inject IJSRuntime JSRuntime
 
-<h1>Hello, world!</h1>
+@using System.Text.Json
+@using System.Text.Json.Nodes
+@using Radzen
+@using SimpleBlazorMonaco
+@using MonacoRazor
 
-Welcome to your new app.
+<h3>Run Python</h3>
+
+<CodeEditor @ref="@MonacoCodeEditor"
+            Language="python"
+            Code="@CurrentScript"
+            Height="300px"
+            Width="100%" />
+
+<br />
+
+<RadzenButton Text="Get Code"
+              Click="GetCode"
+              Style="margin-right: 10px" />
+
+<RadzenButton Text="Update Code"
+              Click="UpdateCode"
+              ButtonStyle="ButtonStyle.Secondary"
+              Style="margin-right: 10px" />
+
+<RadzenButton Text="Execute"
+              Click="ExecutePython"
+              ButtonStyle="ButtonStyle.Primary" />
+
+@if (isRunning)
+{
+    <div style="text-align:center; margin:20px;">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p>Running Python...</p>
+    </div>
+}
+
+<br />
+
+@if (!string.IsNullOrEmpty(Message))
+{
+    <div class="alert alert-danger">
+        <strong>Error:</strong> @Message
+    </div>
+}
+
+<br />
+
+@if (dataRows?.Any() == true)
+{
+    <RadzenDataGrid Data="@dataRows" TItem="Dictionary<string, object>">
+        <Columns>
+            @foreach (var key in dataRows[0].Keys)
+            {
+                <RadzenDataGridColumn TItem="Dictionary<string, object>" Title="@key">
+                    <Template Context="context">
+                        @context[key]
+                    </Template>
+                </RadzenDataGridColumn>
+            }
+        </Columns>
+    </RadzenDataGrid>
+}
+
+@code {
+    CodeEditor MonacoCodeEditor;
+    private string Message = "";
+    bool isRunning = false;
+    string CurrentScript = "";
+    string SampleScript = @"
+import pandas as pd
+
+def load_data():
+    df = pd.DataFrame([
+        {'Name': 'Alice', 'Age': 30},
+        {'Name': 'Bob', 'Age': 25}
+    ])
+    return df
+";
+    List<Dictionary<string, object>> dataRows = new();
+
+    protected override void OnInitialized()
+    {
+        CurrentScript = SampleScript;
+    }
+
+    private async Task GetCode()
+    {
+        CurrentScript = await MonacoCodeEditor.GetCodeAsync();
+        Message = CurrentScript;
+    }
+
+    private async Task UpdateCode()
+    {
+        await MonacoCodeEditor.UpdateCodeAsync(SampleScript);
+    }
+
+    private void CloseMessagePopup()
+    {
+        Message = "";
+    }
+
+    private async Task ExecutePython()
+    {
+        try
+        {
+            Message = ""; // Clear any previous error messages
+
+            isRunning = true;
+            StateHasChanged();
+
+            // Get Python code from Monaco
+            var pythonCode = await MonacoCodeEditor.GetCodeAsync();
+
+            // Call JS to execute Python via Pyodide and get JSON
+            var json = await JSRuntime.InvokeAsync<string>("runPythonScript", pythonCode);
+
+            // Parse and flatten JSON into a table-friendly format
+            dataRows = new List<Dictionary<string, object>>();
+            var parsedArray = JsonNode.Parse(json)?.AsArray();
+
+            if (parsedArray != null)
+            {
+                foreach (var item in parsedArray)
+                {
+                    var dict = new Dictionary<string, object>();
+                    if (item is JsonObject obj)
+                    {
+                        foreach (var prop in obj)
+                        {
+                            dict[prop.Key] = prop.Value?.GetValue<object>() ?? "";
+                        }
+                    }
+                    dataRows.Add(dict);
+                }
+            }
+        }
+        catch (JSException jsEx)
+        {
+            // Check if the error message contains "Must return a DataFrame"
+            if (jsEx.Message.Contains("Must return a DataFrame"))
+            {
+                // Display a custom error message
+                Message = "The Python code must return a valid Pandas DataFrame. Please ensure your function returns a DataFrame.";
+            }
+            else
+            {
+                // Display the original error message for other errors
+                Message = jsEx.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            // Handle other errors
+            Message = ex.Message;
+        }
+        finally
+        {
+            isRunning = false;
+            StateHasChanged();
+        }
+    }
+}

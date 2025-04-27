@@ -12,6 +12,42 @@
     <link rel="icon" href="data:,">
 </head>
 
+<script src="https://cdn.jsdelivr.net/pyodide/v0.27.1/full/pyodide.js"></script>
+
+<script>
+    let pyodideReadyPromise = loadPyodide();
+
+    async function runPythonScript(pythonCode) {
+    let pyodide = await pyodideReadyPromise;
+
+    // Load the Pandas package
+    await pyodide.loadPackage("pandas");
+
+    // Import necessary modules
+    pyodide.runPython(`
+import json
+`);
+
+    try {
+        // Execute the Python code
+        pyodide.runPython(pythonCode + `
+_result = load_data()
+if not isinstance(_result, pd.DataFrame):
+    raise TypeError("Must return a DataFrame")
+_result_json = _result.to_json(orient="records")
+`);
+
+        // Retrieve the JSON result
+        const resultJson = pyodide.globals.get('_result_json');
+        return resultJson;
+    } catch (error) {
+        // Extract and throw only the relevant error message
+        const errorMessage = error.message.split("\n").find(line => line.includes("TypeError: Must return a DataFrame"));
+        throw new Error(errorMessage || "An error occurred while executing the Python code.");
+    }
+}
+</script>
+
 <body>
 
     <div class="status-bar-safe-area"></div>
