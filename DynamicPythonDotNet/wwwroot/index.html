@@ -29,11 +29,11 @@
     try {
         // Execute the Python code
         pyodide.runPython(pythonCode + `
-            _result = load_data()
-            if not isinstance(_result, pd.DataFrame):
-                raise TypeError("Must return a DataFrame")
-            _result_json = _result.to_json(orient="records")
-        `);
+_result = load_data()
+if not isinstance(_result, pd.DataFrame):
+    raise TypeError("Must return a DataFrame")
+_result_json = _result.to_json(orient="records")
+`);
 
         // Retrieve the JSON result
         const resultJson = pyodide.globals.get('_result_json');
