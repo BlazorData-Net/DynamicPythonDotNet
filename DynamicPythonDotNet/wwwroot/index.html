@@ -44,21 +44,37 @@
     async function runPythonProcessing(filename) {
         const pyodide = await pyodideReadyPromise;
 
-        // 1. Install engine
+        // 1. Install core packages
         await pyodide.loadPackage("micropip");
-        await pyodide.loadPackage("pandas") 
+        await pyodide.loadPackage("pandas");
         const micropip = pyodide.pyimport('micropip');
-        await micropip.install('openpyxl');  
+        await micropip.install('openpyxl');
 
-        // 2. Read into a DataFrame and serialize
+        // 2. If it's a Parquet file, install pyarrow (or fastparquet) for pd.read_parquet
+        if (filename.toLowerCase().endsWith('.parquet')) {
+            // try pyarrow; if that isn’t available, you can swap in 'fastparquet'
+            await micropip.install('pyarrow');
+        }
+
+        // 3. Read into a DataFrame and serialize
         const df_json = pyodide.runPython(`
 import pandas as pd
-df = pd.read_excel('/${filename}')
+import os
+
+filepath = '/${filename}'
+ext = os.path.splitext(filepath)[1].lower()
+
+if ext == '.parquet':
+    df = pd.read_parquet(filepath)
+else:
+    df = pd.read_excel(filepath)
+
 df.to_json(orient='records')
 `);
         console.log('Data:', JSON.parse(df_json));
         return df_json;
     }
+
 
     async function runPythonScript(pythonCode) {
     let pyodide = await pyodideReadyPromise;
