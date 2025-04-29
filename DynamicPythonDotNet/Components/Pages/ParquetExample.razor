@@ -9,6 +9,9 @@
 
 <h3>Parquet File Example</h3>
 
+<InputFile OnChange="PickAndProcessFile"
+           accept=".xls,.xlsx" />
+<br />
 <CodeEditor @ref="@MonacoCodeEditor"
             Language="python"
             Code="@CurrentScript"
@@ -16,10 +19,6 @@
             Width="100%" />
 
 <br />
-
-<RadzenButton Text="Get Code"
-              Click="GetCode"
-              Style="margin-right: 10px" />
 
 <RadzenButton Text="Update Code"
               Click="UpdateCode"
@@ -66,7 +65,8 @@
 }
 
 @code {
-    CodeEditor MonacoCodeEditor;
+    CodeEditor? MonacoCodeEditor;
+    private IBrowserFile CurrentFile;
     private string Message = "";
     bool isRunning = false;
     string CurrentScript = "";
@@ -87,10 +87,61 @@ def load_data():
         CurrentScript = SampleScript;
     }
 
-    private async Task GetCode()
+    private async Task PickAndProcessFile(InputFileChangeEventArgs e)
     {
-        CurrentScript = await MonacoCodeEditor.GetCodeAsync();
-        Message = CurrentScript;
+
+        try
+        {
+            if (e.File == null)
+            {
+                return;
+            }
+
+            CurrentFile = e.File;
+
+            // Increase the max allowed size to a value larger than your file size
+            using var fileStream = CurrentFile.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024); // 50 MB
+
+            System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+
+            using var memoryStream = new MemoryStream();
+            await fileStream.CopyToAsync(memoryStream);
+            memoryStream.Position = 0;
+            var bytes = memoryStream.ToArray();
+
+            // Convert to Base64 for JS interop
+            var base64 = Convert.ToBase64String(bytes);
+
+            // Write file into Pyodide FS
+            await JSRuntime.InvokeVoidAsync("writeFileToPyodide", e.File.Name, base64);
+
+            // Run Python to process and get result
+            var json = await JSRuntime.InvokeAsync<string>("runPythonProcessing", e.File.Name);
+            
+            // Parse and flatten JSON into a table-friendly format
+            dataRows = new List<Dictionary<string, object>>();
+            var parsedArray = JsonNode.Parse(json)?.AsArray();
+
+            if (parsedArray != null)
+            {
+                foreach (var item in parsedArray)
+                {
+                    var dict = new Dictionary<string, object>();
+                    if (item is JsonObject obj)
+                    {
+                        foreach (var prop in obj)
+                        {
+                            dict[prop.Key] = prop.Value?.GetValue<object>() ?? "";
+                        }
+                    }
+                    dataRows.Add(dict);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Message = $"Error: {ex.Message}";
+        }
     }
 
     private async Task UpdateCode()

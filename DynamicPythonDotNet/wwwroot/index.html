@@ -17,6 +17,49 @@
 <script>
     let pyodideReadyPromise = loadPyodide();
 
+     /**
+     * Decode a Base64 string into a Uint8Array.
+     * @param {string} base64 - The Base64-encoded data.
+     * @returns {Uint8Array} - The decoded byte array.
+     */
+    function base64ToUint8Array(base64) {
+        // 1. Decode to a binary string
+        const binaryString = window.atob(base64); // atob is widely supported 
+        // 2. Allocate a byte array
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);      // Uint8Array is available in all modern JS 
+        // 3. Populate with character codes (0–255)
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        return bytes;
+    }
+
+    async function writeFileToPyodide(filename, base64Data) {
+        const bytes = base64ToUint8Array(base64Data);
+        const pyodide = await pyodideReadyPromise;
+        pyodide.FS.writeFile(`/${filename}`, bytes, { encoding: 'binary' });
+    }
+
+    async function runPythonProcessing(filename) {
+        const pyodide = await pyodideReadyPromise;
+
+        // 1. Install engine
+        await pyodide.loadPackage("micropip");
+        await pyodide.loadPackage("pandas") 
+        const micropip = pyodide.pyimport('micropip');
+        await micropip.install('openpyxl');  
+
+        // 2. Read into a DataFrame and serialize
+        const df_json = pyodide.runPython(`
+import pandas as pd
+df = pd.read_excel('/${filename}')
+df.to_json(orient='records')
+`);
+        console.log('Data:', JSON.parse(df_json));
+        return df_json;
+    }
+
     async function runPythonScript(pythonCode) {
     let pyodide = await pyodideReadyPromise;
 
