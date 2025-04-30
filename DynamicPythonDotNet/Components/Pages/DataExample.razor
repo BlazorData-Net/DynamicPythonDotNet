@@ -1,4 +1,4 @@
-﻿@page "/parquet"
+﻿@page "/dataexample"
 @inject IJSRuntime JSRuntime
 
 @using System.Text.Json
@@ -19,11 +19,6 @@
             Width="100%" />
 
 <br />
-
-<RadzenButton Text="Update Code"
-              Click="UpdateCode"
-              ButtonStyle="ButtonStyle.Secondary"
-              Style="margin-right: 10px" />
 
 <RadzenButton Text="Execute"
               Click="ExecutePython"
@@ -70,14 +65,49 @@
     private string Message = "";
     bool isRunning = false;
     string CurrentScript = "";
-    string SampleScript = @"
+    string ScriptTemplate = @"
+# Import the pandas library for data manipulation
 import pandas as pd
 
+# Import the os module to work with file paths and extensions
+import os
+
+# Define a function named load_data
 def load_data():
+    # Define the file path to the data file (could be .xlsx or .parquet)
+    filepath = '/LosAngelesDataSmallFormatted.xlsx'
+
+    # Extract the file extension (e.g., '.xlsx', '.parquet') and convert it to lowercase for consistency
+    ext = os.path.splitext(filepath)[1].lower()
+
+    # If the file is a Parquet file, use pandas to read it with read_parquet
+    if ext == '.parquet':
+        df = pd.read_parquet(filepath)
+    else:
+        # Otherwise, assume it's an Excel file and read it with read_excel
+        df = pd.read_excel(filepath)
+
+    # Use the head() method to select only the top 10 rows of the DataFrame
+    df_top10 = df.head(10)
+
+    # Return the top 10 rows as a DataFrame
+    return df_top10
+";
+
+    string SampleScript = @"
+# Import the pandas library, commonly used for data manipulation and analysis
+import pandas as pd
+
+# Define a function named load_data
+def load_data():
+    # Create a DataFrame (a table-like data structure) manually using a list of dictionaries
+    # Each dictionary represents a row with column names as keys
     df = pd.DataFrame([
-        {'Name': 'Alice', 'Age': 30},
-        {'Name': 'Bob', 'Age': 25}
+        {'Name': 'Alice', 'Age': 30},  # First row with Name = Alice and Age = 30
+        {'Name': 'Bob', 'Age': 25}     # Second row with Name = Bob and Age = 25
     ])
+
+    # Return the created DataFrame to the caller
     return df
 ";
     List<Dictionary<string, object>> dataRows = new();
@@ -97,6 +127,11 @@ def load_data():
                 return;
             }
 
+            Message = ""; // Clear any previous error messages
+            dataRows = null; // Clear previous data rows
+            isRunning = true;
+            StateHasChanged();
+
             CurrentFile = e.File;
 
             // Increase the max allowed size to a value larger than your file size
@@ -115,43 +150,38 @@ def load_data():
             // Write file into Pyodide FS
             await JSRuntime.InvokeVoidAsync("writeFileToPyodide", e.File.Name, base64);
 
+            CurrentScript = ScriptTemplate.Replace("${filename}", e.File.Name);
+
+            await UpdateCode(CurrentScript);
+
             // Run Python to process and get result
             var json = await JSRuntime.InvokeAsync<string>("runPythonProcessing", e.File.Name);
-            
-            // Parse and flatten JSON into a table-friendly format
-            dataRows = new List<Dictionary<string, object>>();
-            var parsedArray = JsonNode.Parse(json)?.AsArray();
 
-            if (parsedArray != null)
-            {
-                foreach (var item in parsedArray)
-                {
-                    var dict = new Dictionary<string, object>();
-                    if (item is JsonObject obj)
-                    {
-                        foreach (var prop in obj)
-                        {
-                            dict[prop.Key] = prop.Value?.GetValue<object>() ?? "";
-                        }
-                    }
-                    dataRows.Add(dict);
-                }
-            }
+            await ExecutePython();
         }
         catch (Exception ex)
         {
             Message = $"Error: {ex.Message}";
         }
+        finally
+        {
+            isRunning = false;
+            StateHasChanged();
+        }
     }
 
-    private async Task UpdateCode()
+    private async Task UpdateCode(string script)
     {
-        await MonacoCodeEditor.UpdateCodeAsync(SampleScript);
-    }
-
-    private void CloseMessagePopup()
-    {
-        Message = "";
+        if (MonacoCodeEditor != null)
+        {
+            // Update the code in the Monaco editor
+            await MonacoCodeEditor.UpdateCodeAsync(script);
+        }
+        else
+        {
+            // If MonacoCodeEditor is null, set the script directly to CurrentScript
+            CurrentScript = script;
+        }
     }
 
     private async Task ExecutePython()

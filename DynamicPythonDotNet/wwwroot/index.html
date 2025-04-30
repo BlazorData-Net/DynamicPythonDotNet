@@ -69,10 +69,13 @@ if ext == '.parquet':
 else:
     df = pd.read_excel(filepath)
 
-df.to_json(orient='records')
+_result_json = df.to_json(orient='records')
 `);
-        console.log('Data:', JSON.parse(df_json));
-        return df_json;
+        // Retrieve the JSON result
+        const resultJson = pyodide.globals.get('_result_json');
+        // write to console
+        console.log(resultJson);
+        return resultJson;
     }
 
 
@@ -93,7 +96,6 @@ if not isinstance(_result, pd.DataFrame):
     raise TypeError("Must return a DataFrame")
 _result_json = _result.to_json(orient="records")
 `);
-
         // Retrieve the JSON result
         const resultJson = pyodide.globals.get('_result_json');
         return resultJson;
