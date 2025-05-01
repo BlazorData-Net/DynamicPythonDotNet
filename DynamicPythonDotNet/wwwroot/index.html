@@ -44,40 +44,18 @@
     async function runPythonProcessing(filename) {
         const pyodide = await pyodideReadyPromise;
 
-        // 1. Install core packages
+        // Install core packages
         await pyodide.loadPackage("micropip");
         await pyodide.loadPackage("pandas");
         const micropip = pyodide.pyimport('micropip');
         await micropip.install('openpyxl');
 
-        // 2. If it's a Parquet file, install pyarrow (or fastparquet) for pd.read_parquet
+        // If it's a Parquet file, install pyarrow (or fastparquet) for pd.read_parquet
         if (filename.toLowerCase().endsWith('.parquet')) {
             // try pyarrow; if that isn’t available, you can swap in 'fastparquet'
             await micropip.install('pyarrow');
         }
-
-        // 3. Read into a DataFrame and serialize
-        const df_json = pyodide.runPython(`
-import pandas as pd
-import os
-
-filepath = '/${filename}'
-ext = os.path.splitext(filepath)[1].lower()
-
-if ext == '.parquet':
-    df = pd.read_parquet(filepath)
-else:
-    df = pd.read_excel(filepath)
-
-_result_json = df.to_json(orient='records')
-`);
-        // Retrieve the JSON result
-        const resultJson = pyodide.globals.get('_result_json');
-        // write to console
-        console.log(resultJson);
-        return resultJson;
     }
-
 
     async function runPythonScript(pythonCode) {
     let pyodide = await pyodideReadyPromise;
@@ -88,22 +66,16 @@ _result_json = df.to_json(orient='records')
     // Import necessary modules
     pyodide.runPython(`import json`);
 
-    try {
-        // Execute the Python code
-        pyodide.runPython(pythonCode + `
+    // Execute the Python code
+    pyodide.runPython(pythonCode + `
 _result = load_data()
 if not isinstance(_result, pd.DataFrame):
     raise TypeError("Must return a DataFrame")
 _result_json = _result.to_json(orient="records")
 `);
-        // Retrieve the JSON result
-        const resultJson = pyodide.globals.get('_result_json');
-        return resultJson;
-    } catch (error) {
-        // Extract and throw only the relevant error message
-        const errorMessage = error.message.split("\n").find(line => line.includes("TypeError: Must return a DataFrame"));
-        throw new Error(errorMessage || "An error occurred while executing the Python code.");
-    }
+    // Retrieve the JSON result
+    const resultJson = pyodide.globals.get('_result_json');
+    return resultJson;
 }
 </script>
 

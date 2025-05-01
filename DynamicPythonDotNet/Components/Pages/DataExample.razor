@@ -10,39 +10,39 @@
 <h3>Parquet File Example</h3>
 
 <InputFile OnChange="PickAndProcessFile"
-           accept=".xls,.xlsx,.parquet" />
+accept=".xls,.xlsx,.parquet" />
 <br />
 <CodeEditor @ref="@MonacoCodeEditor"
-            Language="python"
-            Code="@CurrentScript"
-            Height="300px"
-            Width="100%" />
+Language="python"
+Code="@CurrentScript"
+Height="300px"
+Width="100%" />
 
 <br />
 
 <RadzenButton Text="Execute"
-              Click="ExecutePython"
-              ButtonStyle="ButtonStyle.Primary" />
+Click="ExecutePython"
+ButtonStyle="ButtonStyle.Primary" />
 
 @if (isRunning)
 {
     <div style="text-align:center; margin:20px;">
         <div class="spinner-border text-primary" role="status"></div>
-        <p>Running Python...</p>
+        <p>@Message</p>
     </div>
 }
 
 <br />
-
-@if (!string.IsNullOrEmpty(Message))
+<br />
+@if (!string.IsNullOrEmpty(ErrorMessage))
 {
     <div class="alert alert-danger">
-        <strong>Error:</strong> @Message
+        <strong>Error:</strong> @ErrorMessage
     </div>
 }
 
 <br />
-
+<br />
 @if (dataRows?.Any() == true)
 {
     <RadzenDataGrid Data="@dataRows" TItem="Dictionary<string, object>">
@@ -63,6 +63,7 @@
     CodeEditor? MonacoCodeEditor;
     private IBrowserFile CurrentFile;
     private string Message = "";
+    private string ErrorMessage = "";
     bool isRunning = false;
     string CurrentScript = "";
     string ScriptTemplate = @"
@@ -75,7 +76,7 @@ import os
 # Define a function named load_data
 def load_data():
     # Define the file path to the data file (could be .xlsx or .parquet)
-    filepath = '/LosAngelesDataSmallFormatted.xlsx'
+    filepath = '/{filename}'
 
     # Extract the file extension (e.g., '.xlsx', '.parquet') and convert it to lowercase for consistency
     ext = os.path.splitext(filepath)[1].lower()
@@ -127,15 +128,17 @@ def load_data():
                 return;
             }
 
-            Message = ""; // Clear any previous error messages
-            dataRows = null; // Clear previous data rows
+            ErrorMessage = ""; // Clear any previous error messages             
+            dataRows = new List<Dictionary<string, object>>(); // Clear previous data rows
+
+            Message = "Loading File"; 
             isRunning = true;
             StateHasChanged();
 
             CurrentFile = e.File;
 
             // Increase the max allowed size to a value larger than your file size
-            using var fileStream = CurrentFile.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024); // 50 MB
+            using var fileStream = CurrentFile.OpenReadStream(maxAllowedSize: 100 * 1024 * 1024); // 100 MB
 
             System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
 
@@ -148,23 +151,25 @@ def load_data():
             var base64 = Convert.ToBase64String(bytes);
 
             // Write file into Pyodide FS
-            await JSRuntime.InvokeVoidAsync("writeFileToPyodide", e.File.Name, base64);
-
-            CurrentScript = ScriptTemplate.Replace("${filename}", e.File.Name);
-
-            await UpdateCode(CurrentScript);
+            await JSRuntime.InvokeVoidAsync("writeFileToPyodide", CurrentFile.Name, base64);
 
             // Run Python to process and get result
-            var json = await JSRuntime.InvokeAsync<string>("runPythonProcessing", e.File.Name);
+            var json = await JSRuntime.InvokeAsync<string>("runPythonProcessing", CurrentFile.Name);
 
-            await ExecutePython();
+            // Update the script
+            CurrentScript = ScriptTemplate.Replace("{filename}", CurrentFile.Name);
+
+            // Update the Monaco editor with the new script
+            await UpdateCode(CurrentScript);             
         }
         catch (Exception ex)
         {
-            Message = $"Error: {ex.Message}";
+            ErrorMessage = $"Error: {ex.Message}";
         }
         finally
         {
+            Message = "";
+            dataRows = new List<Dictionary<string, object>>();
             isRunning = false;
             StateHasChanged();
         }
@@ -188,8 +193,9 @@ def load_data():
     {
         try
         {
-            Message = ""; // Clear any previous error messages
-
+            ErrorMessage = ""; // Clear any previous error messages
+            Message = "Running Python"; // Clear any previous messages
+            dataRows = new List<Dictionary<string, object>>(); // Clear previous data rows
             isRunning = true;
             StateHasChanged();
 
@@ -205,6 +211,9 @@ def load_data():
 
             if (parsedArray != null)
             {
+                Message = "Loading Data";
+                StateHasChanged();
+
                 foreach (var item in parsedArray)
                 {
                     var dict = new Dictionary<string, object>();
@@ -218,6 +227,9 @@ def load_data():
                     dataRows.Add(dict);
                 }
             }
+
+            Message = "";
+            StateHasChanged();
         }
         catch (JSException jsEx)
         {
@@ -225,21 +237,22 @@ def load_data():
             if (jsEx.Message.Contains("Must return a DataFrame"))
             {
                 // Display a custom error message
-                Message = "The Python code must return a valid Pandas DataFrame. Please ensure your function returns a DataFrame.";
+                ErrorMessage = "The Python code must return a valid Pandas DataFrame. Please ensure your function returns a DataFrame.";
             }
             else
             {
                 // Display the original error message for other errors
-                Message = jsEx.Message;
+                ErrorMessage = jsEx.Message;
             }
         }
         catch (Exception ex)
         {
             // Handle other errors
-            Message = ex.Message;
+            ErrorMessage = ex.Message;
         }
         finally
         {
+            Message = "";
             isRunning = false;
             StateHasChanged();
         }
