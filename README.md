@@ -22,6 +22,7 @@
   - Displays user-friendly error messages if the Python code does not return a valid Pandas DataFrame or encounters other issues.
 
 - **Data Visualization**  
+  - Load data as Excel or Parquet
   - Converts the returned Pandas DataFrame into JSON format and displays it in a responsive data grid using Radzen DataGrid.
 
 - **Interactive Buttons**  
@@ -50,4 +51,3 @@
 ## Requirements
 
 - .NET 9 SDK  
-- A modern web browser (for Pyodide compatibility)
