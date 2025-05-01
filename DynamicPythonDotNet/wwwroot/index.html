@@ -11,41 +11,6 @@
     <link rel="stylesheet" href="DynamicPythonDotNet.styles.css" />
     <link rel="icon" href="data:,">
 </head>
-
-<script src="https://cdn.jsdelivr.net/pyodide/v0.27.1/full/pyodide.js"></script>
-
-<script>
-    let pyodideReadyPromise = loadPyodide();
-
-    async function runPythonScript(pythonCode) {
-    let pyodide = await pyodideReadyPromise;
-
-    // Load the Pandas package
-    await pyodide.loadPackage("pandas");
-
-    // Import necessary modules
-    pyodide.runPython(`import json`);
-
-    try {
-        // Execute the Python code
-        pyodide.runPython(pythonCode + `
-_result = load_data()
-if not isinstance(_result, pd.DataFrame):
-    raise TypeError("Must return a DataFrame")
-_result_json = _result.to_json(orient="records")
-`);
-
-        // Retrieve the JSON result
-        const resultJson = pyodide.globals.get('_result_json');
-        return resultJson;
-    } catch (error) {
-        // Extract and throw only the relevant error message
-        const errorMessage = error.message.split("\n").find(line => line.includes("TypeError: Must return a DataFrame"));
-        throw new Error(errorMessage || "An error occurred while executing the Python code.");
-    }
-}
-</script>
-
 <body>
 
     <div class="status-bar-safe-area"></div>
@@ -57,6 +22,87 @@ _result_json = _result.to_json(orient="records")
         <a href="" class="reload">Reload</a>
         <a class="dismiss">🗙</a>
     </div>
+
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.27.1/full/pyodide.js"></script>
+
+    <script>
+    let pyodideReadyPromise = loadPyodide();
+
+     /**
+     * Decode a Base64 string into a Uint8Array.
+     * @param {string} base64 - The Base64-encoded data.
+     * @returns {Uint8Array} - The decoded byte array.
+     */
+    function base64ToUint8Array(base64) {
+        // 1. Decode to a binary string
+        const binaryString = window.atob(base64); // atob is widely supported
+        // 2. Allocate a byte array
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);      // Uint8Array is available in all modern JS
+        // 3. Populate with character codes (0–255)
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        return bytes;
+    }
+
+    async function writeFileToPyodide(filename, base64Data) {
+        const pyodide = await pyodideReadyPromise;
+
+        // Remove any existing .xls, .xlsx, or .parquet files
+        const files = pyodide.FS.readdir('/');
+        for (const file of files) {
+            if (file.endsWith('.xls') || file.endsWith('.xlsx') || file.endsWith('.parquet')) {
+                try {
+                    pyodide.FS.unlink(`/${file}`);
+                } catch (err) {
+                    console.warn(`Failed to remove file ${file}:`, err);
+                }
+            }
+        }
+
+        // Write the new file
+        const bytes = base64ToUint8Array(base64Data);
+        pyodide.FS.writeFile(`/${filename}`, bytes, { encoding: 'binary' });
+    }
+
+    async function runPythonProcessing(filename) {
+        const pyodide = await pyodideReadyPromise;
+
+        // Install core packages
+        await pyodide.loadPackage("micropip");
+        await pyodide.loadPackage("pandas");
+        const micropip = pyodide.pyimport('micropip');
+        await micropip.install('openpyxl');
+
+        // If it's a Parquet file, install pyarrow (or fastparquet) for pd.read_parquet
+        if (filename.toLowerCase().endsWith('.parquet')) {
+            // try pyarrow; if that isn’t available, you can swap in 'fastparquet'
+            await micropip.install('pyarrow');
+        }
+    }
+
+    async function runPythonScript(pythonCode) {
+    let pyodide = await pyodideReadyPromise;
+
+    // Load the Pandas package
+    await pyodide.loadPackage("pandas");
+
+    // Import necessary modules
+    pyodide.runPython(`import json`);
+
+    // Execute the Python code
+    pyodide.runPython(pythonCode + `
+_result = load_data()
+if not isinstance(_result, pd.DataFrame):
+    raise TypeError("Must return a DataFrame")
+_result_json = _result.to_json(orient="records")
+`);
+    // Retrieve the JSON result
+    const resultJson = pyodide.globals.get('_result_json');
+    return resultJson;
+}
+    </script>
 
     <script src="_framework/blazor.webview.js" autostart="false"></script>
     <script src="_content/Radzen.Blazor/Radzen.Blazor.js"></script>

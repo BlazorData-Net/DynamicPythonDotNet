@@ -1,0 +1,260 @@
+﻿@page "/dataexample"
+@inject IJSRuntime JSRuntime
+
+@using System.Text.Json
+@using System.Text.Json.Nodes
+@using Radzen
+@using SimpleBlazorMonaco
+@using MonacoRazor
+
+<h3>Data File Example</h3>
+
+<InputFile OnChange="PickAndProcessFile"
+accept=".xls,.xlsx,.parquet" />
+<br />
+<CodeEditor @ref="@MonacoCodeEditor"
+Language="python"
+Code="@CurrentScript"
+Height="500px"
+Width="100%" />
+
+<br />
+
+<RadzenButton Text="Execute"
+Click="ExecutePython"
+ButtonStyle="ButtonStyle.Primary" />
+
+@if (isRunning)
+{
+    <div style="text-align:center; margin:20px;">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p>@Message</p>
+    </div>
+}
+
+<br />
+<br />
+@if (!string.IsNullOrEmpty(ErrorMessage))
+{
+    <div class="alert alert-danger">
+        <strong>Error:</strong> @ErrorMessage
+    </div>
+}
+
+<br />
+@if (dataRows?.Any() == true)
+{
+    <RadzenDataGrid Data="@dataRows" TItem="Dictionary<string, object>">
+        <Columns>
+            @foreach (var key in dataRows[0].Keys)
+            {
+                <RadzenDataGridColumn TItem="Dictionary<string, object>" Title="@key">
+                    <Template Context="context">
+                        @context[key]
+                    </Template>
+                </RadzenDataGridColumn>
+            }
+        </Columns>
+    </RadzenDataGrid>
+}
+<br />
+<br />
+@code {
+    CodeEditor? MonacoCodeEditor;
+    private IBrowserFile CurrentFile;
+    private string Message = "";
+    private string ErrorMessage = "";
+    bool isRunning = false;
+    string CurrentScript = "";
+    string ScriptTemplate = @"
+# Import the pandas library for data manipulation
+import pandas as pd
+
+# Import the os module to work with file paths and extensions
+import os
+
+# Define a function named load_data
+def load_data():
+    # Define the file path to the data file (could be .xlsx or .parquet)
+    filepath = '/{filename}'
+
+    # Extract the file extension (e.g., '.xlsx', '.parquet') and convert it to lowercase for consistency
+    ext = os.path.splitext(filepath)[1].lower()
+
+    # If the file is a Parquet file, use pandas to read it with read_parquet
+    if ext == '.parquet':
+        df = pd.read_parquet(filepath)
+    else:
+        # Otherwise, assume it's an Excel file and read it with read_excel
+        df = pd.read_excel(filepath)
+
+    # Use the head() method to select only the top 10 rows of the DataFrame
+    df_top10 = df.head(10)
+
+    # Return the top 10 rows as a DataFrame
+    return df_top10
+";
+
+    string SampleScript = @"
+# Import the pandas library, commonly used for data manipulation and analysis
+import pandas as pd
+
+# Define a function named load_data
+def load_data():
+    # Create a DataFrame (a table-like data structure) manually using a list of dictionaries
+    # Each dictionary represents a row with column names as keys
+    df = pd.DataFrame([
+        {'Name': 'Alice', 'Age': 30},  # First row with Name = Alice and Age = 30
+        {'Name': 'Bob', 'Age': 25}     # Second row with Name = Bob and Age = 25
+    ])
+
+    # Return the created DataFrame to the caller
+    return df
+";
+    List<Dictionary<string, object>> dataRows = new();
+
+    protected override void OnInitialized()
+    {
+        CurrentScript = SampleScript;
+    }
+
+    private async Task PickAndProcessFile(InputFileChangeEventArgs e)
+    {
+
+        try
+        {
+            if (e.File == null)
+            {
+                return;
+            }
+
+            ErrorMessage = ""; // Clear any previous error messages             
+            dataRows = new List<Dictionary<string, object>>(); // Clear previous data rows
+
+            Message = "Loading File"; 
+            isRunning = true;
+            StateHasChanged();
+
+            CurrentFile = e.File;
+
+            // Increase the max allowed size to a value larger than your file size
+            using var fileStream = CurrentFile.OpenReadStream(maxAllowedSize: 100 * 1024 * 1024); // 100 MB
+
+            System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+
+            using var memoryStream = new MemoryStream();
+            await fileStream.CopyToAsync(memoryStream);
+            memoryStream.Position = 0;
+            var bytes = memoryStream.ToArray();
+
+            // Convert to Base64 for JS interop
+            var base64 = Convert.ToBase64String(bytes);
+
+            // Write file into Pyodide FS
+            await JSRuntime.InvokeVoidAsync("writeFileToPyodide", CurrentFile.Name, base64);
+
+            // Run Python to process and get result
+            var json = await JSRuntime.InvokeAsync<string>("runPythonProcessing", CurrentFile.Name);
+
+            // Update the script
+            CurrentScript = ScriptTemplate.Replace("{filename}", CurrentFile.Name);
+
+            // Update the Monaco editor with the new script
+            await UpdateCode(CurrentScript);             
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            Message = "";
+            dataRows = new List<Dictionary<string, object>>();
+            isRunning = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task UpdateCode(string script)
+    {
+        if (MonacoCodeEditor != null)
+        {
+            // Update the code in the Monaco editor
+            await MonacoCodeEditor.UpdateCodeAsync(script);
+        }
+        else
+        {
+            // If MonacoCodeEditor is null, set the script directly to CurrentScript
+            CurrentScript = script;
+        }
+    }
+
+    private async Task ExecutePython()
+    {
+        try
+        {
+            ErrorMessage = ""; // Clear any previous error messages
+            Message = "Running Python"; // Clear any previous messages
+            dataRows = new List<Dictionary<string, object>>(); // Clear previous data rows
+            isRunning = true;
+            StateHasChanged();
+
+            // Get Python code from Monaco
+            var pythonCode = await MonacoCodeEditor.GetCodeAsync();
+
+            // Call JS to execute Python via Pyodide and get JSON
+            var json = await JSRuntime.InvokeAsync<string>("runPythonScript", pythonCode);
+
+            // Parse and flatten JSON into a table-friendly format
+            dataRows = new List<Dictionary<string, object>>();
+            var parsedArray = JsonNode.Parse(json)?.AsArray();
+
+            if (parsedArray != null)
+            {
+                Message = "Loading Data";
+                StateHasChanged();
+
+                foreach (var item in parsedArray)
+                {
+                    var dict = new Dictionary<string, object>();
+                    if (item is JsonObject obj)
+                    {
+                        foreach (var prop in obj)
+                        {
+                            dict[prop.Key] = prop.Value?.GetValue<object>() ?? "";
+                        }
+                    }
+                    dataRows.Add(dict);
+                }
+            }
+
+            Message = "";
+            StateHasChanged();
+        }
+        catch (JSException jsEx)
+        {
+            // Check if the error message contains "Must return a DataFrame"
+            if (jsEx.Message.Contains("Must return a DataFrame"))
+            {
+                // Display a custom error message
+                ErrorMessage = "The Python code must return a valid Pandas DataFrame. Please ensure your function returns a DataFrame.";
+            }
+            else
+            {
+                // Display the original error message for other errors
+                ErrorMessage = jsEx.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            // Handle other errors
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            Message = "";
+            isRunning = false;
+            StateHasChanged();
+        }
+    }
+}
