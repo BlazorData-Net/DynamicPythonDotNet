@@ -11,10 +11,21 @@
     <link rel="stylesheet" href="DynamicPythonDotNet.styles.css" />
     <link rel="icon" href="data:,">
 </head>
+<body>
 
-<script src="https://cdn.jsdelivr.net/pyodide/v0.27.1/full/pyodide.js"></script>
+    <div class="status-bar-safe-area"></div>
 
-<script>
+    <div id="app">Loading...</div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">🗙</a>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.27.1/full/pyodide.js"></script>
+
+    <script>
     let pyodideReadyPromise = loadPyodide();
 
      /**
@@ -24,10 +35,10 @@
      */
     function base64ToUint8Array(base64) {
         // 1. Decode to a binary string
-        const binaryString = window.atob(base64); // atob is widely supported 
+        const binaryString = window.atob(base64); // atob is widely supported
         // 2. Allocate a byte array
         const len = binaryString.length;
-        const bytes = new Uint8Array(len);      // Uint8Array is available in all modern JS 
+        const bytes = new Uint8Array(len);      // Uint8Array is available in all modern JS
         // 3. Populate with character codes (0–255)
         for (let i = 0; i < len; i++) {
             bytes[i] = binaryString.charCodeAt(i);
@@ -77,19 +88,7 @@ _result_json = _result.to_json(orient="records")
     const resultJson = pyodide.globals.get('_result_json');
     return resultJson;
 }
-</script>
-
-<body>
-
-    <div class="status-bar-safe-area"></div>
-
-    <div id="app">Loading...</div>
-
-    <div id="blazor-error-ui">
-        An unhandled error has occurred.
-        <a href="" class="reload">Reload</a>
-        <a class="dismiss">🗙</a>
-    </div>
+    </script>
 
     <script src="_framework/blazor.webview.js" autostart="false"></script>
     <script src="_content/Radzen.Blazor/Radzen.Blazor.js"></script>
