@@ -1,8 +1,12 @@
 # DynamicPythonDotNet
 
-![image](https://github.com/user-attachments/assets/ff17cf8c-86d9-4b22-901b-808946d3057c)
+![image](https://github.com/user-attachments/assets/61b1d8fd-82de-41a3-ad33-219cea15b48b)
 
 **DynamicPythonDotNet** is a .NET MAUI application that provides an interactive environment for writing, executing, and visualizing Python code directly in the browser. The project leverages Pyodide, a Python runtime for the web, to execute Python scripts dynamically and display the results in a user-friendly interface.
+
+## Blog Posts
+
+- [Building a Dynamic Python Execution Environment with .NET MAUI, Pyodide, Monaco, and Radzen](https://blazorhelpwebsite.com/ViewBlogPost/20073)
 
 ## Features
 
