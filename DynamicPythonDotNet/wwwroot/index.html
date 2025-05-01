@@ -47,8 +47,22 @@
     }
 
     async function writeFileToPyodide(filename, base64Data) {
-        const bytes = base64ToUint8Array(base64Data);
         const pyodide = await pyodideReadyPromise;
+
+        // Remove any existing .xls, .xlsx, or .parquet files
+        const files = pyodide.FS.readdir('/');
+        for (const file of files) {
+            if (file.endsWith('.xls') || file.endsWith('.xlsx') || file.endsWith('.parquet')) {
+                try {
+                    pyodide.FS.unlink(`/${file}`);
+                } catch (err) {
+                    console.warn(`Failed to remove file ${file}:`, err);
+                }
+            }
+        }
+
+        // Write the new file
+        const bytes = base64ToUint8Array(base64Data);
         pyodide.FS.writeFile(`/${filename}`, bytes, { encoding: 'binary' });
     }
 
