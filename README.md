@@ -7,6 +7,7 @@
 ## Blog Posts
 
 - [Building a Dynamic Python Execution Environment with .NET MAUI, Pyodide, Monaco, and Radzen](https://blazorhelpwebsite.com/ViewBlogPost/20073)
+- [Building a Dynamic Python Execution Environment: Loading Excel and Parquet files](https://blazorhelpwebsite.com/ViewBlogPost/20074)
 
 ## Features
 
